@@ -53,6 +53,18 @@ FACTORS = {
 log = logging.getLogger('collector')
 
 
+class dummyMessage(object):
+    """
+    Mocks the metrics_pb2.MetricFamily() object fields
+    to manually re-inject messages for processing
+    """
+    def __init__(self, name, metric_type, metrics):
+        self.type = metric_type
+        self.metric = metrics
+        self.name = name
+        self.help = ""
+
+
 class KubeletCheck(PrometheusCheck, CadvisorScraper):
     """
     Collect container metrics from Kubelet.
@@ -103,6 +115,11 @@ class KubeletCheck(PrometheusCheck, CadvisorScraper):
         # and container_<metric-name>_limit_<metric-unit> reads it to compute <metric-name>usage_pct
         self.fs_usage_bytes = {}
         self.mem_usage_bytes = {}
+        # the prometheus format exposes container_cpu_usage_seconds_total
+        # per CPU, we need to sum them before computing the rate
+        # key: cid
+        # value: metric objects (multiplied to nanocores, summed)
+        self.cpu_usage_sum = {}
 
     def check(self, instance):
         self.kubelet_conn_info = get_connection_info()
@@ -149,10 +166,12 @@ class KubeletCheck(PrometheusCheck, CadvisorScraper):
             self.process_cadvisor(instance, self.cadvisor_legacy_url, self.pod_list, self.container_filter)
         elif self.metrics_url:  # Prometheus
             self.process(self.metrics_url, send_histograms_buckets=send_buckets, instance=instance)
+            self._report_prometheus_cpu(self.cpu_usage_sum, self.instance_tags)
 
         # Free up memory
         self.pod_list = None
         self.container_filter = None
+        self.cpu_usage_sum.clear()
 
     def perform_kubelet_query(self, url, verbose=True, timeout=10):
         """
@@ -478,6 +497,15 @@ class KubeletCheck(PrometheusCheck, CadvisorScraper):
                 val = getattr(metric, METRIC_TYPES[message.type]).value
                 self.rate(metric_name, val, tags)
 
+    def _report_prometheus_cpu(self, cpu_usage_sum, instance_tags):
+        """
+        Re-inject the cpu metrics that have been aggregated by cid and summed.
+        This needs to be called once the prometheus payload has been completely processed.
+        """
+        metric_name = self.NAMESPACE + '.cpu.usage.total'
+        message = dummyMessage("container_cpu_usage_seconds_total", 0, cpu_usage_sum.itervalues())
+        self._process_container_rate(metric_name, message)
+
     def _process_usage_metric(self, m_name, message, cache):
         """
         Takes a metrics message, a metric name, and a cache dict where it will store
@@ -549,12 +577,20 @@ class KubeletCheck(PrometheusCheck, CadvisorScraper):
                                        "container %s, skipping usage_pct for now." % (pct_m_name, c_name))
 
     def container_cpu_usage_seconds_total(self, message, **_):
-        metric_name = self.NAMESPACE + '.cpu.usage.total'
         for metric in message.metric:
-            # convert cores in nano cores
-            metric.counter.value *= 10. ** 9
+            if self._is_container_metric(metric):
+                c_id = self._get_container_id(metric.label)
+                if not c_id:
+                    return
 
-        self._process_container_rate(metric_name, message)
+                # convert cores in nano cores
+                metric.counter.value *= 10. ** 9
+
+                if c_id not in self.cpu_usage_sum:
+                    self.cpu_usage_sum[c_id] = metric
+                else:
+                    # Sum the counter value accross all cores
+                    self.cpu_usage_sum[c_id].counter.value += metric.counter.value
 
     def container_fs_reads_bytes_total(self, message, **_):
         metric_name = self.NAMESPACE + '.io.read_bytes'
