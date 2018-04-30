@@ -2,19 +2,16 @@
 # All rights reserved
 # Licensed under Simplified BSD License (see LICENSE)
 
-# stdlib
 from collections import defaultdict
 from datetime import datetime, timedelta
 from itertools import islice
 from math import ceil, floor, sqrt
 from urlparse import urljoin
 
-# project
-from checks import AgentCheck
-from utils.containers import hash_mutable
-
-# 3p
 import requests
+
+from datadog_checks.checks import AgentCheck
+from datadog_checks.utils.containers import hash_mutable
 
 
 # More information in https://www.consul.io/docs/internals/coordinates.html,

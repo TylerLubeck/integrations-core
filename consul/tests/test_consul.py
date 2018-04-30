@@ -5,14 +5,13 @@
 import random
 
 # 3p
-from nose.plugins.attrib import attr
 from requests import HTTPError
 
 from tests.checks.common import AgentCheckTest, load_check
 from utils.containers import hash_mutable
 
 # project
-from checks import AgentCheck
+from datadog_checks.checks import AgentCheck
 
 MOCK_CONFIG = {
     'init_config': {},
@@ -76,7 +75,6 @@ def _get_random_ip():
     rand_int = int(15 * random.random()) + 10
     return "10.0.2.{0}".format(rand_int)
 
-@attr(requires='consul')
 class TestCheckConsul(AgentCheckTest):
     CHECK_NAME = 'consul'
 
@@ -667,7 +665,6 @@ class TestCheckConsul(AgentCheckTest):
         self.assertEquals(16, len(node))
         self.assertEquals(0.26577747932995816, node[0][2])
 
-@attr(requires='consul')
 class TestIntegrationConsul(AgentCheckTest):
     """Basic Test for consul integration."""
     CHECK_NAME = 'consul'

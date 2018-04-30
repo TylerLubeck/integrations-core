@@ -1,7 +1,8 @@
-from . import consul
+# (C) Datadog, Inc. 2010-2018
+# All rights reserved
+# Licensed under Simplified BSD License (see LICENSE)
 
-ConsulCheck = consul.ConsulCheck
+from .consul import ConsulCheck
+from .__about__ import __version__
 
-__version__ = "1.4.0"
-
-__all__ = ['consul']
+__all__ = ['ConsulCheck']
